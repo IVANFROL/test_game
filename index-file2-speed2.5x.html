@@ -1,0 +1,464 @@
+<!-- КАЖДАЯ КОЛОНКА СОДЕРЖИТ:
+Триал - номер попытки (1-100)
+Скорость - скорость движения в пикселях за кадр
+СкоростьПиксСек - скорость в пикселях в секунду
+Отклонение - разница в пикселях от идеального центра
+Направление - "раньше" (левее центра) или "позже" (правее центра)
+ВремяРеакции - время в миллисекундах от начала движения до клика
+Позиция - координата X левого края круга
+ТипОтвета - "click" (был клик) или "timeout" (пропущено)
+ИдеальноеПопадание - true/false (было ли точное совпадение)
+Время - временная метка выполнения -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Эксперимент - Скорость 2.5x</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="UTF-8">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #f0f0f0;
+            font-family: Arial, sans-serif;
+        }
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            background: white;
+            overflow: hidden;
+            width: 700px;
+            margin: 0 auto;
+        }
+        #target-ring {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            width: 100px;
+            height: 100px;
+            border: 3px solid blue;
+            border-radius: 50%;
+            background: transparent;
+            z-index: 10;
+        }
+        /* Точка-ориентир в центре кольца */
+        #target-center {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            width: 6px;
+            height: 6px;
+            background: blue;
+            border-radius: 50%;
+            z-index: 11;
+        }
+        /* Прицел в центре кольца */
+        #target-crosshair {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            width: 20px;
+            height: 20px;
+            z-index: 25;
+            pointer-events: none;
+        }
+        #target-crosshair::before,
+        #target-crosshair::after {
+            content: '';
+            position: absolute;
+            background: blue;
+            box-shadow: 0 0 3px rgba(0, 0, 255, 0.8);
+        }
+        #target-crosshair::before {
+            width: 3px;
+            height: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+        #target-crosshair::after {
+            width: 20px;
+            height: 3px;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+        #moving-circle {
+            position: absolute;
+            left: -100px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 100px;
+            height: 100px;
+            background: red;
+            border-radius: 50%;
+            z-index: 20;
+            transition: background-color 0.1s;
+        }
+        /* Крест-ориентир в центре движущегося круга */
+        #circle-center {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            width: 20px;
+            height: 20px;
+            z-index: 21;
+            pointer-events: none;
+        }
+        #circle-center::before,
+        #circle-center::after {
+            content: '';
+            position: absolute;
+            background: white;
+            box-shadow: 0 0 3px rgba(255, 255, 255, 0.8);
+        }
+        #circle-center::before {
+            width: 3px;
+            height: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+        #circle-center::after {
+            width: 20px;
+            height: 3px;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+        #response-button {
+            position: absolute;
+            bottom: 50px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 15px 30px;
+            font-size: 18px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            z-index: 30;
+        }
+        #info-panel {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 10px;
+            font-family: monospace;
+            border-radius: 5px;
+            font-size: 12px;
+        }
+        #progress {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 10px;
+            font-family: monospace;
+            border-radius: 5px;
+            font-size: 12px;
+        }
+        /* Индикатор идеального попадания */
+        #perfect-hit {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 24px;
+            font-weight: bold;
+            color: #00ff00;
+            z-index: 26;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        @media only screen and (max-width: 768px){
+            #container {
+                width: 100vw;  
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="target-ring"></div>
+        <div id="target-center"></div>
+        <div id="target-crosshair"></div>
+        <div id="moving-circle">
+            <div id="circle-center"></div>
+        </div>
+        <div id="perfect-hit">✓</div>
+        <button id="response-button">Нажми когда круг в кольце!</button>
+        <div id="info-panel">Статус: Загрузка...</div>
+        <div id="progress">Триал: 1/100</div>
+    </div>
+
+    <script>
+        // === КОНФИГУРАЦИЯ ЭКСПЕРИМЕНТА ===
+        const CONFIG = {
+            totalTrials: 100,
+            speed: 2.5, // пикселей за кадр
+            fps: 60, // предполагаемая частота кадров
+            circleRadius: 50,
+            circleWidth: 100,
+            perfectHitZone: 3 // Зона идеального попадания (в пикселях)
+        };
+
+        // Скорость в пикселях в секунду
+        const SPEED_PX_PER_SEC = CONFIG.speed * CONFIG.fps;
+
+        // === ПЕРЕМЕННЫЕ ===
+        let experimentData = [];
+        let currentTrial = 0;
+        let circlePosition = -CONFIG.circleWidth;
+        let isMoving = false;
+        let animationId = null;
+        let trialStartTime = 0;
+        let perfectHitDetected = false;
+
+        // === ЭЛЕМЕНТЫ DOM ===
+        let circle, button, info, progress, container, perfectHit;
+
+        // === ИНИЦИАЛИЗАЦИЯ ===
+        window.onload = function() {
+            console.log("✅ Эксперимент запускается...");
+            
+            // Получаем элементы
+            circle = document.getElementById('moving-circle');
+            button = document.getElementById('response-button');
+            info = document.getElementById('info-panel');
+            progress = document.getElementById('progress');
+            container = document.getElementById('container');
+            perfectHit = document.getElementById('perfect-hit');
+            
+            // Проверяем
+            if (!circle || !button) {
+                info.textContent = "ОШИБКА: Элементы не найдены!";
+                return;
+            }
+            
+            info.textContent = `Статус: Готов | Скорость: ${SPEED_PX_PER_SEC} px/s`;
+            
+            // Обработчик кнопки
+            button.onclick = handleButtonClick;
+            
+            // Запускаем первый триал
+            startTrial();
+        };
+
+        // === ЗАПУСК ТРИАЛА ===
+        function startTrial() {
+            if (currentTrial >= CONFIG.totalTrials) {
+                endExperiment();
+                return;
+            }
+            
+            currentTrial++;
+            updateProgress();
+            
+            info.textContent = `Скорость: ${SPEED_PX_PER_SEC} px/s | Триал: ${currentTrial}`;
+            
+            // Сбрасываем позицию и состояние
+            circlePosition = -CONFIG.circleWidth;
+            circle.style.left = circlePosition + 'px';
+            circle.style.backgroundColor = 'red';
+            perfectHitDetected = false;
+            perfectHit.style.opacity = '0';
+            
+            // Ждем немного и запускаем
+            setTimeout(() => {
+                isMoving = true;
+                trialStartTime = Date.now();
+                animateCircle();
+            }, 500);
+        }
+
+        // === АНИМАЦИЯ КРУГА ===
+        function animateCircle() {
+            if (!isMoving) return;
+            
+            // Двигаем круг
+            circlePosition += CONFIG.speed;
+            circle.style.left = circlePosition + 'px';
+            
+            // Проверяем центр
+            const containerWidth = container.offsetWidth;
+            const targetCenter = containerWidth / 2;
+            const circleCenterPos = circlePosition + CONFIG.circleRadius;
+            const deviation = Math.abs(circleCenterPos - targetCenter);
+            
+            // ТОЛЬКО при идеальном попадании меняем цвет
+            if (deviation < CONFIG.perfectHitZone && !perfectHitDetected) {
+                perfectHitDetected = true;
+                circle.style.backgroundColor = '#00ff00';
+                perfectHit.style.opacity = '1';
+                
+                // Через 200ms возвращаем красный цвет
+                setTimeout(() => {
+                    if (isMoving) {
+                        circle.style.backgroundColor = 'red';
+                        perfectHit.style.opacity = '0';
+                        perfectHitDetected = false;
+                    }
+                }, 200);
+            }
+            
+            // Проверяем границы
+            if (circlePosition < containerWidth) {
+                animationId = requestAnimationFrame(() => animateCircle());
+            } else {
+                // Триал завершен (таймаут)
+                handleTrialEnd(null);
+            }
+        }
+
+        // === ОБРАБОТКА КЛИКА ===
+        function handleButtonClick() {
+            if (!isMoving) return;
+            
+            const reactionTime = Date.now() - trialStartTime;
+            const containerWidth = container.offsetWidth;
+            const targetCenter = containerWidth / 2;
+            const circleCenterPos = circlePosition + CONFIG.circleRadius;
+            const deviation = Math.abs(circleCenterPos - targetCenter);
+            
+            handleTrialEnd({ deviation, reactionTime, circleCenterPos, targetCenter });
+        }
+
+        // === ЗАВЕРШЕНИЕ ТРИАЛА ===
+        function handleTrialEnd(response) {
+            isMoving = false;
+            cancelAnimationFrame(animationId);
+            
+            // Сохраняем данные
+            const trialData = {
+                trialNumber: currentTrial,
+                speed: CONFIG.speed,
+                speedPxPerSec: SPEED_PX_PER_SEC,
+                timestamp: new Date().toISOString(),
+                perfectHit: perfectHitDetected
+            };
+            
+            if (response) {
+                // Был клик
+                const containerWidth = container.offsetWidth;
+                const targetCenter = containerWidth / 2;
+                const circleCenterPos = response.circleCenterPos || (circlePosition + CONFIG.circleRadius);
+                
+                trialData.deviation = response.deviation;
+                trialData.reactionTime = response.reactionTime;
+                trialData.circlePosition = circlePosition;
+                trialData.responseType = 'click';
+                
+                // Определяем направление (раньше/позже)
+                if (circleCenterPos < targetCenter) {
+                    trialData.direction = 'раньше';
+                } else if (circleCenterPos > targetCenter) {
+                    trialData.direction = 'позже';
+                } else {
+                    trialData.direction = 'идеально';
+                }
+                
+                if (perfectHitDetected) {
+                    info.textContent = `ИДЕАЛЬНО! Отклонение: ${response.deviation.toFixed(1)}px`;
+                } else {
+                    info.textContent = `Отклонение: ${response.deviation.toFixed(1)}px (${trialData.direction}) | Время: ${response.reactionTime}ms`;
+                }
+            } else {
+                // Таймаут
+                const containerWidth = container.offsetWidth;
+                const targetCenter = containerWidth / 2;
+                const circleCenterPos = circlePosition + CONFIG.circleRadius;
+                
+                trialData.deviation = Math.abs(circleCenterPos - targetCenter);
+                trialData.reactionTime = null;
+                trialData.circlePosition = circlePosition;
+                trialData.responseType = 'timeout';
+                
+                if (circleCenterPos < targetCenter) {
+                    trialData.direction = 'раньше';
+                } else if (circleCenterPos > targetCenter) {
+                    trialData.direction = 'позже';
+                } else {
+                    trialData.direction = 'идеально';
+                }
+                
+                info.textContent = 'Таймаут! Круг ушел за край';
+            }
+            
+            experimentData.push(trialData);
+            console.log('Данные триала:', trialData);
+            
+            // Следующий триал через 1 секунду
+            if (currentTrial < CONFIG.totalTrials) {
+                setTimeout(startTrial, 1000);
+            } else {
+                endExperiment();
+            }
+        }
+
+        // === ОБНОВЛЕНИЕ ПРОГРЕССА ===
+        function updateProgress() {
+            progress.textContent = `Триал: ${currentTrial}/${CONFIG.totalTrials}`;
+            button.textContent = `Нажми! (${currentTrial}/${CONFIG.totalTrials})`;
+        }
+
+        // === ЗАВЕРШЕНИЕ ЭКСПЕРИМЕНТА ===
+        function endExperiment() {
+            info.textContent = "Эксперимент завершен!";
+            button.textContent = "Скачать результаты";
+            button.onclick = downloadResults;
+            button.style.background = '#2196F3';
+            
+            console.log('Все данные:', experimentData);
+        }
+
+        // === СКАЧИВАНИЕ РЕЗУЛЬТАТОВ ===
+        function downloadResults() {
+            // Используем точку с запятой как разделитель для русского Excel
+            let csv = '\uFEFF'; // BOM для Excel
+            
+            // Заголовки с разделителем точка с запятой
+            csv += 'Триал;Скорость(px/кадр);Скорость(px/сек);Отклонение;Направление;ВремяРеакции;Позиция;ТипОтвета;ИдеальноеПопадание;Время\n';
+            
+            experimentData.forEach(row => {
+                const line = [
+                    row.trialNumber,
+                    row.speed,
+                    row.speedPxPerSec,
+                    (row.deviation || 0).toFixed(2).replace('.', ','),
+                    row.direction || '',
+                    row.reactionTime || '',
+                    (row.circlePosition || 0).toFixed(2).replace('.', ','),
+                    row.responseType,
+                    row.perfectHit ? 'Да' : 'Нет',
+                    row.timestamp
+                ].join(';');
+                
+                csv += line + '\n';
+            });
+            
+            const blob = new Blob([csv], { type: 'text/csv; charset=utf-8' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `experiment_results_${Date.now()}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+        }
+        
+        // Обработчик ошибок
+        window.onerror = function(msg) {
+            info.textContent = "ОШИБКА: " + msg;
+        };
+    </script>
+</body>
+</html>
+
