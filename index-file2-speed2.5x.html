@@ -226,29 +226,52 @@
 
         // === ИНИЦИАЛИЗАЦИЯ ===
         window.onload = function() {
-            console.log("✅ Эксперимент запускается...");
-            
-            // Получаем элементы
-            circle = document.getElementById('moving-circle');
-            button = document.getElementById('response-button');
-            info = document.getElementById('info-panel');
-            progress = document.getElementById('progress');
-            container = document.getElementById('container');
-            perfectHit = document.getElementById('perfect-hit');
-            
-            // Проверяем
-            if (!circle || !button) {
-                info.textContent = "ОШИБКА: Элементы не найдены!";
-                return;
+            try {
+                console.log("✅ Эксперимент запускается...");
+                
+                // Получаем элементы
+                circle = document.getElementById('moving-circle');
+                button = document.getElementById('response-button');
+                info = document.getElementById('info-panel');
+                progress = document.getElementById('progress');
+                container = document.getElementById('container');
+                perfectHit = document.getElementById('perfect-hit');
+                
+                // Проверяем все элементы
+                const missingElements = [];
+                if (!circle) missingElements.push('moving-circle');
+                if (!button) missingElements.push('response-button');
+                if (!info) missingElements.push('info-panel');
+                if (!progress) missingElements.push('progress');
+                if (!container) missingElements.push('container');
+                if (!perfectHit) missingElements.push('perfect-hit');
+                
+                if (missingElements.length > 0) {
+                    const errorMsg = "ОШИБКА: Элементы не найдены: " + missingElements.join(', ');
+                    console.error(errorMsg);
+                    if (info) {
+                        info.textContent = errorMsg;
+                    } else {
+                        alert(errorMsg);
+                    }
+                    return;
+                }
+                
+                info.textContent = `Статус: Готов | Скорость: ${SPEED_PX_PER_SEC} px/s`;
+                
+                // Обработчик кнопки
+                button.onclick = handleButtonClick;
+                
+                // Запускаем первый триал
+                startTrial();
+            } catch (error) {
+                console.error('Ошибка инициализации:', error);
+                if (info) {
+                    info.textContent = 'ОШИБКА инициализации: ' + error.message;
+                } else {
+                    alert('ОШИБКА инициализации: ' + error.message);
+                }
             }
-            
-            info.textContent = `Статус: Готов | Скорость: ${SPEED_PX_PER_SEC} px/s`;
-            
-            // Обработчик кнопки
-            button.onclick = handleButtonClick;
-            
-            // Запускаем первый триал
-            startTrial();
         };
 
         // === ЗАПУСК ТРИАЛА ===
@@ -319,86 +342,113 @@
 
         // === ОБРАБОТКА КЛИКА ===
         function handleButtonClick() {
-            if (!isMoving) return;
-            
-            const reactionTime = Date.now() - trialStartTime;
-            const containerWidth = container.offsetWidth;
-            const targetCenter = containerWidth / 2;
-            const circleCenterPos = circlePosition + CONFIG.circleRadius;
-            const deviation = Math.abs(circleCenterPos - targetCenter);
-            
-            handleTrialEnd({ deviation, reactionTime, circleCenterPos, targetCenter });
+            try {
+                if (!isMoving) {
+                    console.log('Кнопка нажата, но круг не движется');
+                    return;
+                }
+                
+                const reactionTime = Date.now() - trialStartTime;
+                const containerWidth = container.offsetWidth;
+                const targetCenter = containerWidth / 2;
+                const circleCenterPos = circlePosition + CONFIG.circleRadius;
+                const deviation = Math.abs(circleCenterPos - targetCenter);
+                
+                handleTrialEnd({ deviation, reactionTime, circleCenterPos, targetCenter });
+            } catch (error) {
+                console.error('Ошибка в handleButtonClick:', error);
+                info.textContent = 'ОШИБКА: ' + error.message;
+            }
         }
 
         // === ЗАВЕРШЕНИЕ ТРИАЛА ===
         function handleTrialEnd(response) {
-            isMoving = false;
-            cancelAnimationFrame(animationId);
-            
-            // Сохраняем данные
-            const trialData = {
-                trialNumber: currentTrial,
-                speed: CONFIG.speed,
-                speedPxPerSec: SPEED_PX_PER_SEC,
-                timestamp: new Date().toISOString(),
-                perfectHit: perfectHitDetected
-            };
-            
-            if (response) {
-                // Был клик
-                const containerWidth = container.offsetWidth;
-                const targetCenter = containerWidth / 2;
-                const circleCenterPos = response.circleCenterPos || (circlePosition + CONFIG.circleRadius);
-                
-                trialData.deviation = response.deviation;
-                trialData.reactionTime = response.reactionTime;
-                trialData.circlePosition = circlePosition;
-                trialData.responseType = 'click';
-                
-                // Определяем направление (раньше/позже)
-                if (circleCenterPos < targetCenter) {
-                    trialData.direction = 'раньше';
-                } else if (circleCenterPos > targetCenter) {
-                    trialData.direction = 'позже';
-                } else {
-                    trialData.direction = 'идеально';
+            try {
+                isMoving = false;
+                if (animationId) {
+                    cancelAnimationFrame(animationId);
+                    animationId = null;
                 }
                 
-                if (perfectHitDetected) {
-                    info.textContent = `ИДЕАЛЬНО! Отклонение: ${response.deviation.toFixed(1)}px`;
-                } else {
-                    info.textContent = `Отклонение: ${response.deviation.toFixed(1)}px (${trialData.direction}) | Время: ${response.reactionTime}ms`;
-                }
-            } else {
-                // Таймаут
-                const containerWidth = container.offsetWidth;
-                const targetCenter = containerWidth / 2;
-                const circleCenterPos = circlePosition + CONFIG.circleRadius;
-                
-                trialData.deviation = Math.abs(circleCenterPos - targetCenter);
-                trialData.reactionTime = null;
-                trialData.circlePosition = circlePosition;
-                trialData.responseType = 'timeout';
-                
-                if (circleCenterPos < targetCenter) {
-                    trialData.direction = 'раньше';
-                } else if (circleCenterPos > targetCenter) {
-                    trialData.direction = 'позже';
-                } else {
-                    trialData.direction = 'идеально';
+                if (!container) {
+                    console.error('Container не найден!');
+                    return;
                 }
                 
-                info.textContent = 'Таймаут! Круг ушел за край';
-            }
-            
-            experimentData.push(trialData);
-            console.log('Данные триала:', trialData);
-            
-            // Следующий триал через 1 секунду
-            if (currentTrial < CONFIG.totalTrials) {
-                setTimeout(startTrial, 1000);
-            } else {
-                endExperiment();
+                // Сохраняем данные
+                const trialData = {
+                    trialNumber: currentTrial,
+                    speed: CONFIG.speed,
+                    speedPxPerSec: SPEED_PX_PER_SEC,
+                    timestamp: new Date().toISOString(),
+                    perfectHit: perfectHitDetected
+                };
+                
+                if (response) {
+                    // Был клик
+                    const containerWidth = container.offsetWidth;
+                    const targetCenter = containerWidth / 2;
+                    const circleCenterPos = response.circleCenterPos || (circlePosition + CONFIG.circleRadius);
+                    
+                    trialData.deviation = response.deviation;
+                    trialData.reactionTime = response.reactionTime;
+                    trialData.circlePosition = circlePosition;
+                    trialData.responseType = 'click';
+                    
+                    // Определяем направление (раньше/позже)
+                    if (circleCenterPos < targetCenter) {
+                        trialData.direction = 'раньше';
+                    } else if (circleCenterPos > targetCenter) {
+                        trialData.direction = 'позже';
+                    } else {
+                        trialData.direction = 'идеально';
+                    }
+                    
+                    if (info) {
+                        if (perfectHitDetected) {
+                            info.textContent = `ИДЕАЛЬНО! Отклонение: ${response.deviation.toFixed(1)}px`;
+                        } else {
+                            info.textContent = `Отклонение: ${response.deviation.toFixed(1)}px (${trialData.direction}) | Время: ${response.reactionTime}ms`;
+                        }
+                    }
+                } else {
+                    // Таймаут
+                    const containerWidth = container.offsetWidth;
+                    const targetCenter = containerWidth / 2;
+                    const circleCenterPos = circlePosition + CONFIG.circleRadius;
+                    
+                    trialData.deviation = Math.abs(circleCenterPos - targetCenter);
+                    trialData.reactionTime = null;
+                    trialData.circlePosition = circlePosition;
+                    trialData.responseType = 'timeout';
+                    
+                    if (circleCenterPos < targetCenter) {
+                        trialData.direction = 'раньше';
+                    } else if (circleCenterPos > targetCenter) {
+                        trialData.direction = 'позже';
+                    } else {
+                        trialData.direction = 'идеально';
+                    }
+                    
+                    if (info) {
+                        info.textContent = 'Таймаут! Круг ушел за край';
+                    }
+                }
+                
+                experimentData.push(trialData);
+                console.log('Данные триала:', trialData);
+                
+                // Следующий триал через 1 секунду
+                if (currentTrial < CONFIG.totalTrials) {
+                    setTimeout(startTrial, 1000);
+                } else {
+                    endExperiment();
+                }
+            } catch (error) {
+                console.error('Ошибка в handleTrialEnd:', error);
+                if (info) {
+                    info.textContent = 'ОШИБКА: ' + error.message;
+                }
             }
         }
 
@@ -455,10 +505,23 @@
         }
         
         // Обработчик ошибок
-        window.onerror = function(msg) {
-            info.textContent = "ОШИБКА: " + msg;
+        window.onerror = function(msg, url, line, col, error) {
+            console.error('Глобальная ошибка:', msg, url, line, col, error);
+            if (info) {
+                info.textContent = "ОШИБКА: " + msg + " (строка " + line + ")";
+            }
+            return false;
         };
+        
+        // Обработчик необработанных промисов
+        window.addEventListener('unhandledrejection', function(event) {
+            console.error('Необработанная ошибка промиса:', event.reason);
+            if (info) {
+                info.textContent = "ОШИБКА: " + event.reason;
+            }
+        });
     </script>
 </body>
 </html>
+
 
